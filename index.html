@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Shoka w Sekena</title>
+<style>
+:root{--ink:#2d2926;--muted:#777;--line:#ece7e2;--brand:#6b4f3a;--soft:#f8f5f2}
+*{box-sizing:border-box}body{margin:0;font-family:Arial,Tahoma,sans-serif;color:var(--ink);background:#fff}
+header{padding:22px 16px 14px;text-align:center;border-bottom:1px solid var(--line)}
+h1{margin:0;font-size:25px}header p{margin:6px 0 0;color:var(--muted);font-size:13px}
+.wrap{max-width:980px;margin:auto;padding:14px}.search{position:sticky;top:0;background:#fff;padding:8px 0;z-index:2}
+input{width:100%;padding:13px 15px;border:1px solid var(--line);border-radius:14px;font-size:16px}
+.cats{display:flex;gap:8px;overflow:auto;padding:8px 0 14px}.cats button{white-space:nowrap;border:1px solid var(--line);background:#fff;padding:9px 13px;border-radius:999px}
+.cats button.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+.top{display:flex;justify-content:space-between;align-items:center;margin:2px 0 12px}.top span{font-size:13px;color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.card{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#fff}
+.pic{aspect-ratio:1;background:var(--soft);display:flex;align-items:center;justify-content:center;color:#aaa;font-size:13px}
+.pic img{width:100%;height:100%;object-fit:contain;background:#fff}
+.info{padding:11px}.code{font-size:11px;color:var(--muted)}.name{font-size:14px;font-weight:700;min-height:36px;margin-top:5px}
+.price{font-size:18px;font-weight:800;margin:8px 0}.stock{font-size:11px;margin-bottom:8px;color:#2f7a46}.out{color:#a43d3d}
+.order{width:100%;border:0;border-radius:10px;padding:10px;background:var(--brand);color:#fff;font-weight:700}.order:disabled{opacity:.4}
+.empty{text-align:center;color:var(--muted);padding:40px 0}.hint{text-align:center;color:var(--muted);font-size:12px;padding:24px}
+@media(min-width:700px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+</style>
+</head>
+<body>
+<header><h1>Shoka w Sekena</h1><p>كل احتياجات بيتك في مكان واحد</p></header>
+<div class="wrap">
+  <div class="search"><input id="q" placeholder="ابحث بالاسم أو كود المنتج"></div>
+  <div id="cats" class="cats"></div>
+  <div class="top"><strong>المنتجات</strong><span id="count"></span></div>
+  <main id="grid" class="grid"></main>
+  <div class="hint">لتعديل المنتجات افتح ملف products.csv وعدّل الاسم أو السعر أو الحالة ثم ارفعه مع الموقع من جديد.</div>
+</div>
+<script>
+const FALLBACK = [
+["SW-1001","ساعة حائط ديكور ذهبي","ديكور وساعات",450,"متوفر",""],
+["SW-1002","طبق تقديم مقسم","تقديم وضيافة",180,"متوفر",""],
+["SW-1003","طقم أدوات مائدة أطفال","أدوات مائدة",250,"متوفر",""],
+["SW-1004","طقم علب حفظ طعام","تنظيم وتخزين",320,"متوفر",""],
+["SW-1005","منظم مطبخ متعدد الاستخدام","تنظيم وتخزين",195,"متوفر",""],
+["SW-1006","طقم أكواب زجاج","أكواب ومجات",275,"متوفر",""]
+].map(x=>({code:x[0],name:x[1],category:x[2],price:+x[3],status:x[4],image:x[5]}));
+let all=FALLBACK, active="الكل";
+const grid=document.querySelector("#grid"), q=document.querySelector("#q"), cats=document.querySelector("#cats"), count=document.querySelector("#count");
+function parseCSV(t){let lines=t.trim().split(/\r?\n/);return lines.slice(1).map(line=>{let a=line.split(",");return {code:a[0],name:a[1],category:a[2],price:+a[3],status:a[4],image:a.slice(5).join(",")}})}
+async function load(){try{let r=await fetch("products.csv");if(r.ok)all=parseCSV(await r.text())}catch(e){} buildCats();render()}
+function buildCats(){let list=["الكل",...new Set(all.map(p=>p.category))];cats.innerHTML=list.map(c=>`<button data-c="${c}" class="${c==="الكل"?"on":""}">${c}</button>`).join("")}
+function render(){let s=q.value.trim().toLowerCase();let rows=all.filter(p=>(active==="الكل"||p.category===active)&&(!s||p.name.toLowerCase().includes(s)||p.code.toLowerCase().includes(s)));count.textContent=rows.length+" منتج";
+grid.innerHTML=rows.length?rows.map(p=>`<article class="card"><div class="pic">${p.image?`<img src="${p.image}" alt="${p.name}">`:"صورة المنتج"}</div><div class="info"><div class="code">${p.code}</div><div class="name">${p.name}</div><div class="price">${Number(p.price).toLocaleString("ar-EG")} ج.م</div><div class="stock ${p.status!=="متوفر"?"out":""}">${p.status}</div><button class="order" ${p.status!=="متوفر"?"disabled":""} data-code="${p.code}" data-name="${p.name}">اطلب على واتساب</button></div></article>`).join(""):`<div class="empty">لا توجد منتجات مطابقة</div>`}
+cats.addEventListener("click",e=>{let b=e.target.closest("button");if(!b)return;active=b.dataset.c;[...cats.children].forEach(x=>x.classList.toggle("on",x===b));render()});
+q.addEventListener("input",render);
+grid.addEventListener("click",e=>{let b=e.target.closest(".order");if(!b)return;let msg=`مرحبًا، أريد طلب ${b.dataset.name} - كود ${b.dataset.code}`;window.open("https://wa.me/?text="+encodeURIComponent(msg),"_blank")});
+load();
+</script>
+</body></html>
