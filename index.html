@@ -20,38 +20,79 @@ input{width:100%;padding:13px 15px;border:1px solid var(--line);border-radius:14
 .info{padding:11px}.code{font-size:11px;color:var(--muted)}.name{font-size:14px;font-weight:700;min-height:36px;margin-top:5px}
 .price{font-size:18px;font-weight:800;margin:8px 0}.stock{font-size:11px;margin-bottom:8px;color:#2f7a46}.out{color:#a43d3d}
 .order{width:100%;border:0;border-radius:10px;padding:10px;background:var(--brand);color:#fff;font-weight:700}.order:disabled{opacity:.4}
-.empty{text-align:center;color:var(--muted);padding:40px 0}.hint{text-align:center;color:var(--muted);font-size:12px;padding:24px}
+.empty{text-align:center;color:var(--muted);padding:40px 0}.loading{text-align:center;padding:40px;color:var(--muted)}
 @media(min-width:700px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 </style>
 </head>
 <body>
 <header><h1>Shoka w Sekena</h1><p>كل احتياجات بيتك في مكان واحد</p></header>
 <div class="wrap">
-  <div class="search"><input id="q" placeholder="ابحث بالاسم أو كود المنتج"></div>
-  <div id="cats" class="cats"></div>
-  <div class="top"><strong>المنتجات</strong><span id="count"></span></div>
-  <main id="grid" class="grid"></main>
-  <div class="hint">لتعديل المنتجات افتح ملف products.csv وعدّل الاسم أو السعر أو الحالة ثم ارفعه مع الموقع من جديد.</div>
+<div class="search"><input id="q" placeholder="ابحث بالاسم أو كود المنتج"></div>
+<div id="cats" class="cats"></div>
+<div class="top"><strong>المنتجات</strong><span id="count">جاري التحميل...</span></div>
+<main id="grid" class="grid"><div class="loading">جاري تحميل المنتجات من Google Sheets…</div></main>
 </div>
 <script>
-const FALLBACK = [
-["SW-1001","ساعة حائط ديكور ذهبي","ديكور وساعات",450,"متوفر",""],
-["SW-1002","طبق تقديم مقسم","تقديم وضيافة",180,"متوفر",""],
-["SW-1003","طقم أدوات مائدة أطفال","أدوات مائدة",250,"متوفر",""],
-["SW-1004","طقم علب حفظ طعام","تنظيم وتخزين",320,"متوفر",""],
-["SW-1005","منظم مطبخ متعدد الاستخدام","تنظيم وتخزين",195,"متوفر",""],
-["SW-1006","طقم أكواب زجاج","أكواب ومجات",275,"متوفر",""]
-].map(x=>({code:x[0],name:x[1],category:x[2],price:+x[3],status:x[4],image:x[5]}));
-let all=FALLBACK, active="الكل";
-const grid=document.querySelector("#grid"), q=document.querySelector("#q"), cats=document.querySelector("#cats"), count=document.querySelector("#count");
-function parseCSV(t){let lines=t.trim().split(/\r?\n/);return lines.slice(1).map(line=>{let a=line.split(",");return {code:a[0],name:a[1],category:a[2],price:+a[3],status:a[4],image:a.slice(5).join(",")}})}
-async function load(){try{let r=await fetch("products.csv");if(r.ok)all=parseCSV(await r.text())}catch(e){} buildCats();render()}
-function buildCats(){let list=["الكل",...new Set(all.map(p=>p.category))];cats.innerHTML=list.map(c=>`<button data-c="${c}" class="${c==="الكل"?"on":""}">${c}</button>`).join("")}
-function render(){let s=q.value.trim().toLowerCase();let rows=all.filter(p=>(active==="الكل"||p.category===active)&&(!s||p.name.toLowerCase().includes(s)||p.code.toLowerCase().includes(s)));count.textContent=rows.length+" منتج";
-grid.innerHTML=rows.length?rows.map(p=>`<article class="card"><div class="pic">${p.image?`<img src="${p.image}" alt="${p.name}">`:"صورة المنتج"}</div><div class="info"><div class="code">${p.code}</div><div class="name">${p.name}</div><div class="price">${Number(p.price).toLocaleString("ar-EG")} ج.م</div><div class="stock ${p.status!=="متوفر"?"out":""}">${p.status}</div><button class="order" ${p.status!=="متوفر"?"disabled":""} data-code="${p.code}" data-name="${p.name}">اطلب على واتساب</button></div></article>`).join(""):`<div class="empty">لا توجد منتجات مطابقة</div>`}
-cats.addEventListener("click",e=>{let b=e.target.closest("button");if(!b)return;active=b.dataset.c;[...cats.children].forEach(x=>x.classList.toggle("on",x===b));render()});
+const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQHq5y7WXRB_GtBvMGnPVbKaCPwucml2HhedVHRP2HCls01814p76EIZ8djtR5O1c7vkNVRrRyzr_7P/pub?gid=0&single=true&output=csv";
+let all=[], active="الكل";
+const grid=document.querySelector("#grid"),q=document.querySelector("#q"),cats=document.querySelector("#cats"),count=document.querySelector("#count");
+
+function parseCSV(text){
+  const rows=[]; let row=[], field="", quote=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i], n=text[i+1];
+    if(c=='"' && quote && n=='"'){field+='"';i++}
+    else if(c=='"'){quote=!quote}
+    else if(c==','&&!quote){row.push(field);field=""}
+    else if((c=='\n'||c=='\r')&&!quote){
+      if(c=='\r'&&n=='\n')i++;
+      row.push(field);field="";
+      if(row.some(x=>x.trim()!==""))rows.push(row);
+      row=[];
+    } else field+=c;
+  }
+  if(field||row.length){row.push(field);rows.push(row)}
+  if(rows.length<2)return [];
+  const h=rows[0].map(x=>x.trim().toLowerCase());
+  const ix=(...names)=>{for(const n of names){const j=h.indexOf(n);if(j>=0)return j}return -1};
+  const ci=ix("code","الكود"), ni=ix("name","اسم المنتج"), cai=ix("category","القسم"),
+        pi=ix("price","السعر"), si=ix("status","الحالة"), ii=ix("image","رابط الصورة","الصورة");
+  return rows.slice(1).map(r=>({
+    code:(r[ci]||"").trim(), name:(r[ni]||"").trim(), category:(r[cai]||"عام").trim(),
+    price:Number(String(r[pi]||"0").replace(/[^\d.]/g,""))||0,
+    status:(r[si]||"متوفر").trim(), image:(r[ii]||"").trim()
+  })).filter(p=>p.code||p.name).filter(p=>p.status!=="مخفي");
+}
+function safe(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
+function buildCats(){
+  const list=["الكل",...new Set(all.map(p=>p.category).filter(Boolean))];
+  cats.innerHTML=list.map(c=>`<button type="button" data-c="${safe(c)}" class="${c==="الكل"?"on":""}">${safe(c)}</button>`).join("");
+}
+function render(){
+  const s=q.value.trim().toLowerCase();
+  const rows=all.filter(p=>(active==="الكل"||p.category===active)&&(!s||p.name.toLowerCase().includes(s)||p.code.toLowerCase().includes(s)));
+  count.textContent=rows.length+" منتج";
+  grid.innerHTML=rows.length?rows.map(p=>`<article class="card">
+    <div class="pic">${p.image?`<img src="${safe(p.image)}" alt="${safe(p.name)}" loading="lazy" referrerpolicy="no-referrer">`:"صورة المنتج"}</div>
+    <div class="info"><div class="code">${safe(p.code)}</div><div class="name">${safe(p.name)}</div>
+    <div class="price">${Number(p.price).toLocaleString("ar-EG")} ج.م</div>
+    <div class="stock ${p.status!=="متوفر"?"out":""}">${safe(p.status)}</div>
+    <button class="order" type="button" ${p.status!=="متوفر"?"disabled":""} data-code="${safe(p.code)}" data-name="${safe(p.name)}">اطلب على واتساب</button></div>
+  </article>`).join(""):`<div class="empty">لا توجد منتجات مطابقة</div>`;
+}
+async function load(){
+  try{
+    const r=await fetch(CSV_URL,{cache:"no-store"});
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    all=parseCSV(await r.text()); buildCats(); render();
+  }catch(e){
+    count.textContent="تعذر التحميل";
+    grid.innerHTML='<div class="empty">تعذر تحميل المنتجات. تأكد أن Google Sheet منشور بصيغة CSV.</div>';
+  }
+}
+cats.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;active=b.dataset.c;[...cats.children].forEach(x=>x.classList.toggle("on",x===b));render()});
 q.addEventListener("input",render);
-grid.addEventListener("click",e=>{let b=e.target.closest(".order");if(!b)return;let msg=`مرحبًا، أريد طلب ${b.dataset.name} - كود ${b.dataset.code}`;window.open("https://wa.me/?text="+encodeURIComponent(msg),"_blank")});
+grid.addEventListener("click",e=>{const b=e.target.closest(".order");if(!b)return;const msg=`مرحبًا، أريد طلب ${b.dataset.name} - كود ${b.dataset.code}`;window.open("https://wa.me/?text="+encodeURIComponent(msg),"_blank")});
 load();
 </script>
 </body></html>
